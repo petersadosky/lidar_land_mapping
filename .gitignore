@@ -21,3 +21,6 @@ __pycache__/
 *.pyc
 .claude/
 .DS_Store
+
+# Prebuilt terrain variants for instant switching (see README)
+.terrain-variants/

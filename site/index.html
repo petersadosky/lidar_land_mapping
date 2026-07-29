@@ -312,7 +312,7 @@ function buildPoints(buf, T) {
   document.getElementById('pcTotal').textContent = `· ${n.toLocaleString()}`;
 }
 
-// Breathing room before a synchronous build. At 77 tiles the mesh is 3.9M triangles
+// Breathing room before a synchronous build. At 77 tiles the mesh is 6.2M triangles
 // and the cloud 2.9M points, so each build blocks long enough that a frozen progress
 // bar reads as a hang. This has to be a timer, not requestAnimationFrame: rAF never
 // fires while the tab is in the background, which would wedge the load here until

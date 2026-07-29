@@ -12,7 +12,7 @@
     ./build.py --only terrain   # just the mesh (fast; skips the 26 GB LiDAR read)
     ./build.py --out /tmp/x     # write somewhere else, e.g. to diff against the live files
 
-Defaults reproduce exactly what is in site/models today: a 1760x1120 grid at 15.6 ft
+Defaults reproduce exactly what is in site/models today: a 2200x1400 grid at 12.5 ft
 posting and 2,875,000 points over the 77-tile footprint. Both outputs are
 deterministic -- same tiles and same --seed give byte-identical files.
 
@@ -299,9 +299,9 @@ def main():
                     help="quote it to keep the shell from expanding it")
     ap.add_argument("--out", default=os.path.join(here, "site", "models"))
     ap.add_argument("--only", choices=("terrain", "points", "both"), default="both")
-    ap.add_argument("--max-dim", type=int, default=1760,
-                    help="cap on the terrain grid's long side. 1760 holds the 15.6 ft "
-                         "posting across the 77-tile footprint (default: 1760)")
+    ap.add_argument("--max-dim", type=int, default=2200,
+                    help="cap on the terrain grid's long side. 2200 gives 12.5 ft posting "
+                         "across the 77-tile footprint (default: 2200)")
     ap.add_argument("--block", type=int, default=None,
                     help="force the DEM decimation factor instead of deriving it")
     ap.add_argument("--seed", type=int, default=0, help="point sampler seed (default: 0)")

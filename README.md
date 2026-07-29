@@ -60,7 +60,7 @@ Useful flags:
 
 | flag | effect |
 | --- | --- |
-| `--max-dim 1760` | cap on the terrain grid's long side; picks the DEM decimation factor |
+| `--max-dim 2200` | cap on the terrain grid's long side; picks the DEM decimation factor |
 | `--budget-scale 2.5` | scales every point budget together, holding density as the area changes |
 | `--seed 0` | point sampler seed |
 | `--out DIR` | write elsewhere, e.g. to diff against the live files |
@@ -68,24 +68,29 @@ Useful flags:
 ### How it reduces the data
 
 **Terrain.** The DEM tiles are mosaicked to 8800 x 5600 cells at their native 3.125 ft
-resolution, then reduced by a 5x5 **block mean** to 1760 x 1120 at 15.6 ft posting.
+resolution, then reduced by a 4x4 **block mean** to 2200 x 1400 at 12.5 ft posting.
 Averaging matters: plain decimation aliases the ridgelines by up to 73 ft.
 
-That reduction is where the pipeline actually loses fidelity, and it is not small.
-Measured against the source rasters, the rendered surface deviates by **0.65 ft RMS** —
-91% of the area within 1 ft, p99 of 2.4 ft, and worst cases near 64 ft where a single
-15.6 ft cell spans a cliff or road cut. The QL1 program's own vertical spec is roughly
-0.33 ft RMSEz, so the viewer's terrain is about twice as uncertain as its input. Error
-concentrates on steep ground: 0.90 ft RMS above 30 degrees against 0.39 ft on flats.
+That reduction is where the pipeline actually loses fidelity. Measured against the
+source rasters, the rendered surface deviates by **0.51 ft RMS** — 94.5% of the area
+within 1 ft, 99.1% within 2 ft, and worst cases near 62 ft where a single 12.5 ft cell
+spans a cliff or road cut. The QL1 program's own vertical spec is roughly 0.33 ft
+RMSEz, so the viewer's terrain is around 1.5x as uncertain as its input. Error
+concentrates on steep ground: 0.73 ft RMS above 30 degrees against 0.28 ft on flats.
 
 `--max-dim` trades that against payload:
 
 | block | posting | terrain.bin | RMS | p99 | within 1 ft |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 2 | 6.25 ft | 24.6 MB | 0.23 ft | 0.83 ft | 99.5% |
-| 4 | 12.5 ft | 6.2 MB | 0.51 ft | 1.94 ft | 94.5% |
-| 5 (default) | 15.6 ft | 3.9 MB | 0.65 ft | 2.45 ft | 91.4% |
+| 4 (default) | 12.5 ft | 6.2 MB | 0.51 ft | 1.94 ft | 94.5% |
+| 5 | 15.6 ft | 3.9 MB | 0.65 ft | 2.45 ft | 91.4% |
 | 10 | 31.3 ft | 1.0 MB | 1.40 ft | 5.05 ft | 70.4% |
+
+Block 2 was tried and rejected: the detail gain over block 4 is modest, while the
+browser cost is not — 39 MB of payload and ~860 MB of JS heap against 22 MB and
+~185 MB of geometry buffers at block 4. It renders on a desktop but is a poor bet on
+anything smaller.
 
 Heights are then quantised to uint16 across the grid's own min/max. That step is
 0.03 ft, or 0.009 ft RMS — negligible, but note it is negligible *relative to the
