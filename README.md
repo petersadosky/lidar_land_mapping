@@ -67,11 +67,30 @@ Useful flags:
 
 ### How it reduces the data
 
-**Terrain.** The DEM tiles are mosaicked to 8800 x 5600 cells, then reduced by a 5x5
-**block mean** to 1760 x 1120 at 15.6 ft posting. Averaging matters: plain decimation
-aliases the ridgelines by up to 73 ft. Heights are quantised to uint16 across the
-grid's own min/max, which puts the step at 0.03 ft — far below the data's real
-accuracy.
+**Terrain.** The DEM tiles are mosaicked to 8800 x 5600 cells at their native 3.125 ft
+resolution, then reduced by a 5x5 **block mean** to 1760 x 1120 at 15.6 ft posting.
+Averaging matters: plain decimation aliases the ridgelines by up to 73 ft.
+
+That reduction is where the pipeline actually loses fidelity, and it is not small.
+Measured against the source rasters, the rendered surface deviates by **0.65 ft RMS** —
+91% of the area within 1 ft, p99 of 2.4 ft, and worst cases near 64 ft where a single
+15.6 ft cell spans a cliff or road cut. The QL1 program's own vertical spec is roughly
+0.33 ft RMSEz, so the viewer's terrain is about twice as uncertain as its input. Error
+concentrates on steep ground: 0.90 ft RMS above 30 degrees against 0.39 ft on flats.
+
+`--max-dim` trades that against payload:
+
+| block | posting | terrain.bin | RMS | p99 | within 1 ft |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 6.25 ft | 24.6 MB | 0.23 ft | 0.83 ft | 99.5% |
+| 4 | 12.5 ft | 6.2 MB | 0.51 ft | 1.94 ft | 94.5% |
+| 5 (default) | 15.6 ft | 3.9 MB | 0.65 ft | 2.45 ft | 91.4% |
+| 10 | 31.3 ft | 1.0 MB | 1.40 ft | 5.05 ft | 70.4% |
+
+Heights are then quantised to uint16 across the grid's own min/max. That step is
+0.03 ft, or 0.009 ft RMS — negligible, but note it is negligible *relative to the
+0.65 ft already given up to smoothing*, and is not a statement about how closely the
+terrain matches the DEM.
 
 **Points.** 2.2 billion returns are sampled down to 2,875,000 in a single streaming
 pass. Each render group gets its own budget, so sparse classes stay legible instead of
