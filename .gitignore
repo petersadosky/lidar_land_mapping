@@ -1,0 +1,23 @@
+# Source data -- 67 GB of LiDAR and 308 MB of rasters. Re-downloadable from the NC
+# elevation portal; see the README for the tile footprint.
+expanded_layers_las/
+expanded_layers_dem/
+
+# Build output. Regenerate with ./build.py -- it is deterministic, so a given tile set
+# and --seed always produce byte-identical files.
+site/models/
+
+# QGIS project and its leftovers. The .qgz only points at the raw tiles above, and the
+# .mtl pair is dead output from an abandoned "Export 3D Scene" attempt.
+*.qgz
+*.mtl
+
+# Deploy target (TERRAIN_HOST=user@host). Kept out of the repo on purpose.
+deploy.env
+
+# Local environment
+.venv/
+__pycache__/
+*.pyc
+.claude/
+.DS_Store

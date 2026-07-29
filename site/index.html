@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jackson County, NC — LiDAR Terrain</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    background: #0e1014; color: #e6e8ec;
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  /* canvas is a replaced element: without explicit sizing, `width:auto` resolves to
+     the width attribute (buffer px), not the viewport. Must pin it to 100%. */
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .panel {
+    position: fixed; top: 16px; left: 16px; width: 272px; z-index: 10;
+    max-height: calc(100vh - 32px); overflow-y: auto;
+    background: rgba(18,21,28,.84); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.09); border-radius: 13px;
+    padding: 15px 17px; box-shadow: 0 10px 38px rgba(0,0,0,.5);
+  }
+  .panel h1 { margin: 0 0 3px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .panel .sub { margin: 0; font-size: 11.5px; color: #8b94a3; }
+  .stats { margin: 11px 0 0; padding: 9px 0 0; border-top: 1px solid rgba(255,255,255,.07);
+    display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 11.5px; }
+  .stats dt { color: #79808f; }
+  .stats dd { margin: 0; color: #cdd3dd; font-variant-numeric: tabular-nums; }
+
+  .row { margin-top: 13px; }
+  .row label { display: flex; justify-content: space-between; font-size: 12px;
+    color: #b9c0cc; margin-bottom: 5px; }
+  .row label b { color: #e6e8ec; font-weight: 600; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: #6aa9ff; }
+  input[type=checkbox] { accent-color: #6aa9ff; }
+
+  .sect { margin-top: 13px; padding-top: 11px; font-size: 11px; color: #79808f;
+    border-top: 1px solid rgba(255,255,255,.07); }
+  .layers { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 8px; }
+  .layers label { display: flex; align-items: center; gap: 6px; font-size: 12px;
+    color: #b9c0cc; cursor: pointer; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .n { margin-left: auto; font-size: 10px; color: #6b7280; font-variant-numeric: tabular-nums; }
+
+  button { width: 100%; margin-top: 13px; padding: 7px; cursor: pointer;
+    background: rgba(106,169,255,.14); color: #a9cbff;
+    border: 1px solid rgba(106,169,255,.3); border-radius: 8px; font-size: 12px; }
+  button:hover { background: rgba(106,169,255,.22); }
+  .hint { margin-top: 11px; padding-top: 10px; font-size: 10.5px; color: #6b7280;
+    border-top: 1px solid rgba(255,255,255,.07); }
+
+  #loading { position: fixed; inset: 0; z-index: 20; display: grid; place-content: center;
+    justify-items: center; gap: 13px; background: #0e1014; transition: opacity .5s; }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #bar { width: 230px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.12); overflow: hidden; }
+  #fill { height: 100%; width: 0; background: #6aa9ff; transition: width .2s; }
+  #msg { font-size: 12px; color: #8b94a3; font-variant-numeric: tabular-nums; }
+  @media (max-width: 640px) { .panel { width: auto; right: 16px; } }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="loading">
+  <div style="font-size:13px;color:#b9c0cc">Loading terrain…</div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="msg">0%</div>
+</div>
+
+<div class="panel">
+  <h1>Jackson County, NC</h1>
+  <p class="sub">QL1 2025 LiDAR · 77 tiles</p>
+
+  <dl class="stats">
+    <dt>Area</dt><dd id="sArea">—</dd>
+    <dt>Elevation</dt><dd id="sElev">—</dd>
+    <dt>Relief</dt><dd id="sRelief">—</dd>
+    <dt>Grid</dt><dd id="sGrid">—</dd>
+  </dl>
+
+  <div class="row">
+    <label>Vertical exaggeration <b id="vexLabel">1.0×</b></label>
+    <input type="range" id="vex" min="0.5" max="5" step="0.1" value="1">
+  </div>
+  <div class="row">
+    <label>Sun azimuth <b id="sunLabel">315°</b></label>
+    <input type="range" id="sun" min="0" max="360" step="1" value="315">
+  </div>
+
+  <div class="sect">LiDAR returns <span id="pcTotal"></span></div>
+  <div class="layers">
+    <label><input type="checkbox" id="L5" checked><span class="sw" style="background:#7abd5c"></span>Trees<span class="n" id="N5"></span></label>
+    <label><input type="checkbox" id="L9" checked><span class="sw" style="background:#3d8ecc"></span>Water<span class="n" id="N9"></span></label>
+    <label><input type="checkbox" id="L6" checked><span class="sw" style="background:#e0865a"></span>Buildings<span class="n" id="N6"></span></label>
+    <label><input type="checkbox" id="L11" checked><span class="sw" style="background:#9aa0aa"></span>Roads<span class="n" id="N11"></span></label>
+  </div>
+
+  <div class="row">
+    <label>Point size <b id="psizeLabel">2.5 ft</b></label>
+    <input type="range" id="psize" min="1" max="30" step="0.5" value="2.5">
+  </div>
+
+  <div class="sect" style="border-top:none;padding-top:0;margin-top:13px">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#b9c0cc;cursor:pointer">
+      <input type="checkbox" id="wire">Terrain wireframe</label>
+  </div>
+
+  <button id="reset">Reset view</button>
+  <p class="hint">Drag to orbit · scroll to zoom · right-drag to pan</p>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from './vendor/OrbitControls.js';
+
+const DIR = './models/';
+const FT_PER_WORLD = 1500;            // ground feet per world unit; the 27500 ft
+                                      // footprint spans ~18 units. Only sets the
+                                      // absolute scale -- the camera, fog and near/far
+                                      // planes are all fitted to the bounding sphere in
+                                      // resetView(), so widening the area needs no change
+                                      // here. It does fix what the point-size slider
+                                      // means: sizes stay in real feet.
+
+const canvas   = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1014);
+scene.fog = new THREE.Fog(0x0e1014, 20, 70);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 500);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.maxPolarAngle = Math.PI * 0.497;
+
+scene.add(new THREE.HemisphereLight(0x9fc5ff, 0x2b2a26, 0.7));
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+const sun = new THREE.DirectionalLight(0xfff2e0, 2.0);
+scene.add(sun);
+
+const group = new THREE.Group();      // scaled on Y for vertical exaggeration
+scene.add(group);
+
+let terrain = null, fitRadius = 10;
+const layers = {};                    // class code -> THREE.Points
+
+function placeSun(azDeg) {
+  const az = THREE.MathUtils.degToRad(azDeg), el = THREE.MathUtils.degToRad(38);
+  const r = fitRadius * 3;
+  sun.position.set(Math.cos(el)*Math.sin(az)*r, Math.sin(el)*r, Math.cos(el)*Math.cos(az)*r);
+}
+
+// ---- loading ---------------------------------------------------------------
+const loadingEl = document.getElementById('loading');
+const fillEl = document.getElementById('fill'), msgEl = document.getElementById('msg');
+
+async function fetchBuffer(url, label, onFrac) {
+  // 'no-cache' means "always revalidate", not "never cache". The static file server
+  // sends only Last-Modified -- no ETag, no Cache-Control -- so browsers fall back to
+  // heuristic freshness (~10% of the file's age) and will serve a stale models/*.bin.gz
+  // for hours after a deploy. That is how a fresh terrain once got paired with the
+  // previous point cloud. The server does answer If-Modified-Since with a 304, so an
+  // unchanged file costs one round trip and no re-download.
+  const res = await fetch(url, { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
+  const total = +res.headers.get('content-length') || 0;
+  let loaded = 0;
+  let stream = res.body.pipeThrough(new TransformStream({
+    transform(chunk, ctrl) {
+      loaded += chunk.byteLength;
+      if (total) onFrac(loaded / total);
+      ctrl.enqueue(chunk);
+    }
+  }));
+  if (url.endsWith('.gz')) stream = stream.pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).arrayBuffer();
+}
+const setProg = (f, label) => {
+  const p = Math.min(100, Math.round(f * 100));
+  fillEl.style.width = p + '%'; msgEl.textContent = `${label} ${p}%`;
+};
+
+// Hypsometric ramp — deliberately earthy so the green vegetation layer reads on top.
+const RAMP = [[0x2d,0x4a,0x3e],[0x4a,0x67,0x41],[0x7d,0x7f,0x4e],[0x9c,0x85,0x63],[0xc8,0xbf,0xae]];
+function ramp(t, out) {
+  t = Math.max(0, Math.min(1, t)) * (RAMP.length - 1);
+  const i = Math.min(RAMP.length - 2, Math.floor(t)), f = t - i;
+  const a = RAMP[i], b = RAMP[i + 1];
+  out[0] = (a[0] + (b[0]-a[0])*f) / 255;
+  out[1] = (a[1] + (b[1]-a[1])*f) / 255;
+  out[2] = (a[2] + (b[2]-a[2])*f) / 255;
+}
+
+function buildTerrain(buf) {
+  const dv = new DataView(buf);
+  if (String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3)) !== 'HGT1')
+    throw new Error('bad terrain file');
+  const W = dv.getUint32(4, true), H = dv.getUint32(8, true);
+  const L = dv.getFloat64(12,true), B = dv.getFloat64(20,true);
+  const R = dv.getFloat64(28,true), T = dv.getFloat64(36,true);
+  const zmin = dv.getFloat64(44,true), zmax = dv.getFloat64(52,true);
+  const h = new Uint16Array(buf, 60, W * H);
+
+  const cx = (L + R) / 2, cy = (B + T) / 2;
+  const S = 1 / FT_PER_WORLD;
+  const dx = (R - L) / (W - 1), dy = (T - B) / (H - 1);
+
+  const pos = new Float32Array(W * H * 3);
+  const col = new Float32Array(W * H * 3);
+  const rgb = [0,0,0];
+  for (let r = 0; r < H; r++) {
+    const northing = T - r * dy;
+    for (let c = 0; c < W; c++) {
+      const i = r * W + c;
+      const t = h[i] / 65535;
+      const elev = zmin + t * (zmax - zmin);
+      pos[i*3]   =  (L + c * dx - cx) * S;
+      pos[i*3+1] =  (elev - zmin) * S;
+      pos[i*3+2] = -(northing - cy) * S;
+      ramp(t, rgb);
+      col[i*3] = rgb[0]; col[i*3+1] = rgb[1]; col[i*3+2] = rgb[2];
+    }
+  }
+
+  const idx = new Uint32Array((W-1) * (H-1) * 6);
+  let k = 0;
+  for (let r = 0; r < H-1; r++)
+    for (let c = 0; c < W-1; c++) {
+      const a = r*W + c, b = a + 1, d = a + W, e = d + 1;
+      idx[k++]=a; idx[k++]=d; idx[k++]=b;
+      idx[k++]=b; idx[k++]=d; idx[k++]=e;
+    }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(col, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+
+  terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.95, metalness: 0.0, flatShading: false }));
+  group.add(terrain);
+
+  const wFt = R - L, hFt = T - B;
+  document.getElementById('sArea').textContent   = `${(wFt*hFt/27878400).toFixed(1)} sq mi`;
+  document.getElementById('sElev').textContent   = `${Math.round(zmin).toLocaleString()}–${Math.round(zmax).toLocaleString()} ft`;
+  document.getElementById('sRelief').textContent = `${Math.round(zmax-zmin).toLocaleString()} ft`;
+  document.getElementById('sGrid').textContent   = `${W}×${H} @ ${(dx).toFixed(1)} ft`;
+  return { L, B, zmin, cx, cy, S };
+}
+
+const CLASS = {
+  3:  { g: 5,  c: [0.29,0.45,0.24] },
+  4:  { g: 5,  c: [0.36,0.58,0.28] },
+  5:  { g: 5,  c: [0.48,0.74,0.36] },
+  6:  { g: 6,  c: [0.88,0.53,0.35] },
+  9:  { g: 9,  c: [0.24,0.56,0.80] },
+  11: { g: 11, c: [0.60,0.63,0.67] },
+};
+
+function buildPoints(buf, T) {
+  const dv = new DataView(buf);
+  if (String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3)) !== 'PCL2')
+    throw new Error('bad point file');
+  const n  = dv.getUint32(4, true);
+  const ox = dv.getFloat32(8,true), oy = dv.getFloat32(12,true);
+  const oz = dv.getFloat32(16,true), sc = dv.getFloat32(20,true);
+  const q   = new Int16Array(buf, 24, n*3);
+  const cls = new Uint8Array(buf, 24 + n*6, n);
+
+  const counts = {};
+  for (let i = 0; i < n; i++) {
+    const g = (CLASS[cls[i]] || CLASS[5]).g;
+    counts[g] = (counts[g] || 0) + 1;
+  }
+  const arr = {}, fill = {};
+  for (const g in counts) { arr[g] = { p: new Float32Array(counts[g]*3), c: new Float32Array(counts[g]*3) }; fill[g] = 0; }
+
+  for (let i = 0; i < n; i++) {
+    const def = CLASS[cls[i]] || CLASS[5], g = def.g;
+    const j = fill[g]++;
+    const east  = ox + q[i*3]     * sc;
+    const north = oy + q[i*3 + 1] * sc;
+    const elev  = oz + q[i*3 + 2] * sc;
+    const a = arr[g];
+    a.p[j*3]   =  (east  - T.cx) * T.S;
+    a.p[j*3+1] =  (elev  - T.zmin) * T.S;
+    a.p[j*3+2] = -(north - T.cy) * T.S;
+    a.c[j*3] = def.c[0]; a.c[j*3+1] = def.c[1]; a.c[j*3+2] = def.c[2];
+  }
+
+  const sizeWorld = +document.getElementById('psize').value / FT_PER_WORLD;
+  for (const g in arr) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(arr[g].p, 3));
+    geo.setAttribute('color',    new THREE.BufferAttribute(arr[g].c, 3));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: sizeWorld, vertexColors: true, sizeAttenuation: true }));
+    layers[g] = pts;
+    group.add(pts);
+    const el = document.getElementById('N' + g);
+    if (el) el.textContent = counts[g].toLocaleString();
+  }
+  document.getElementById('pcTotal').textContent = `· ${n.toLocaleString()}`;
+}
+
+// Breathing room before a synchronous build. At 77 tiles the mesh is 3.9M triangles
+// and the cloud 2.9M points, so each build blocks long enough that a frozen progress
+// bar reads as a hang. This has to be a timer, not requestAnimationFrame: rAF never
+// fires while the tab is in the background, which would wedge the load here until
+// the tab is focused.
+const paint = () => new Promise(r => setTimeout(r, 0));
+
+async function load() {
+  // Weights follow the gzipped payload: terrain is ~3.7 MB of the ~20 MB total.
+  const tb = await fetchBuffer(DIR + 'terrain.bin.gz', 'terrain', f => setProg(f * 0.18, 'terrain'));
+  setProg(0.18, 'building mesh'); await paint();
+  const T = buildTerrain(tb);
+  const pb = await fetchBuffer(DIR + 'points.bin.gz', 'points', f => setProg(0.18 + f * 0.77, 'points'));
+  setProg(0.95, 'building cloud'); await paint();
+  buildPoints(pb, T);
+  setProg(1, 'ready');
+
+  resetView();
+  loadingEl.classList.add('done');
+  setTimeout(() => loadingEl.remove(), 600);
+}
+
+load().catch(err => {
+  console.error(err);
+  loadingEl.innerHTML = '<div style="color:#ff8f8f;font-size:13px;max-width:360px;text-align:center">' +
+    'Could not load the terrain.<br><span style="color:#79808f;font-size:11px">' + err.message + '</span></div>';
+});
+
+// ---- view ------------------------------------------------------------------
+function resetView() {
+  const box = new THREE.Box3().setFromObject(group);
+  if (box.isEmpty()) return;
+  const sph = box.getBoundingSphere(new THREE.Sphere());
+  const dir = new THREE.Vector3(0.36, 0.5, 0.79).normalize();
+
+  // Fit the bounding *box*, not its sphere. The footprint is a thin 27500x17500 ft
+  // plate, so its sphere is far bigger than the terrain actually on screen -- fitting
+  // the sphere left roughly half the viewport empty. Project each corner onto the
+  // camera basis and take the distance that brings the worst one inside both planes.
+  const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+  const up    = new THREE.Vector3().crossVectors(right, dir).normalize();
+  const tanV  = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const tanH  = tanV * camera.aspect;
+  const corner = new THREE.Vector3();
+  let dist = 0;
+  for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? box.max.x : box.min.x,
+               i & 2 ? box.max.y : box.min.y,
+               i & 4 ? box.max.z : box.min.z).sub(sph.center);
+    const along = corner.dot(dir);
+    dist = Math.max(dist,
+                    along + Math.abs(corner.dot(right)) / tanH,
+                    along + Math.abs(corner.dot(up))    / tanV);
+  }
+  dist *= 1.06;
+  controls.target.copy(sph.center);
+  camera.position.copy(sph.center).addScaledVector(dir, dist);
+  camera.near = Math.max(dist/2000, 0.01); camera.far = dist * 8;
+  camera.updateProjectionMatrix(); controls.update();
+  fitRadius = sph.radius;
+  placeSun(+document.getElementById('sun').value);
+  scene.fog.near = dist - sph.radius * 1.2;
+  scene.fog.far  = dist + sph.radius * 3;
+}
+
+const vex = document.getElementById('vex'), vexLabel = document.getElementById('vexLabel');
+vex.oninput = () => { group.scale.y = +vex.value; vexLabel.textContent = (+vex.value).toFixed(1) + '×'; };
+
+const sunS = document.getElementById('sun'), sunLabel = document.getElementById('sunLabel');
+sunS.oninput = () => { placeSun(+sunS.value); sunLabel.textContent = sunS.value + '°'; };
+
+const psize = document.getElementById('psize'), psizeLabel = document.getElementById('psizeLabel');
+psize.oninput = () => {
+  const s = +psize.value / FT_PER_WORLD;
+  for (const g in layers) layers[g].material.size = s;
+  psizeLabel.textContent = (+psize.value).toFixed(1) + ' ft';
+};
+
+for (const g of [5, 9, 6, 11]) {
+  document.getElementById('L' + g).onchange = e => { if (layers[g]) layers[g].visible = e.target.checked; };
+}
+document.getElementById('wire').onchange = e => { if (terrain) terrain.material.wireframe = e.target.checked; };
+document.getElementById('reset').onclick = resetView;
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>
