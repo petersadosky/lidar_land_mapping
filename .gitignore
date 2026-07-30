@@ -24,3 +24,6 @@ __pycache__/
 
 # Prebuilt terrain variants for instant switching (see README)
 .terrain-variants/
+
+# Local agent notes; not part of the published repo (see README instead)
+CLAUDE.md
